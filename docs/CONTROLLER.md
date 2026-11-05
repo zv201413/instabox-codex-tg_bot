@@ -83,6 +83,8 @@ Compose 从 `docker/.env.controller` 注入配置，使用非 root、只读根�
 
 ## 4. 现有 Codex Bridge 切换与回退
 
+模块职责、实际接入方法、配置对应关系及 HTTP 协议见 [Bridge 对接文档](BRIDGE-INTEGRATION.md)。完整 Bridge 继续只保留在本地，不随本次发布分发。
+
 在没有待处理审批、表单和重要在途任务的窗口切换。先备份 `/data/home/telegram-codex` 的代码、`secrets.json`、`state.sqlite3` 和已有 Codex 状态；SQLite 备份在服务停止后进行，不删除会话或重新绑定账号。
 
 在 instabox 内执行：

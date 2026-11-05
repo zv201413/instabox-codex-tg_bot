@@ -35,6 +35,8 @@
 
 **不要让 VPS 和原 Bridge 同时轮询同一个 bot。** 同 bot 部署需先按 [切换手册](docs/CONTROLLER.md#4-现有-codex-bridge-切换与回退) 完成 Bridge 对接。
 
+完整 Bridge 虽然暂不上传，但其接入位置、目录、配置对应关系、agent 协议、消息落盘/ack 顺序和审批校验已写入 [现有 Codex Bridge 对接文档](docs/BRIDGE-INTEGRATION.md)。原 Codex 服务继续处理会话与任务，网关只替换消息接收来源。
+
 ## 快速部署：独立控制 bot
 
 需要常开的 VPS、Docker Compose、一个固定的 instabox 机器 ID，以及独立 Telegram 控制 bot。控制器只使用 Python 标准库。
@@ -110,6 +112,7 @@ sh tools/run_tests.sh all
 当前本地模拟验证：Controller **38 项**测试、shell/Worker **66 项**断言通过。完整本地 Bridge 曾通过 **47 项**测试；它不在本次发布包内，公开包会明确跳过 Bridge 测试。尚未构建运行 Docker 镜像或执行真实云端休眠、TG 唤醒、附件和审批验收。
 
 - [Controller 部署、切换与回退](docs/CONTROLLER.md)
+- [现有 Codex Bridge 结构与接口对接](docs/BRIDGE-INTEGRATION.md)
 - [修复与验证记录](docs/VALIDATION.md)
 - [旧持续保活工具手册](docs/LEGACY-KEEPALIVE.md)
 - [instabox CLI 操作手册](docs/CLI.md)
