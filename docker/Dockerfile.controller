@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+# InstaBox VPS Controller 容器镜像
+# 纯 Python 3 标准库实现，零第三方依赖，极致轻量安全（~45MB）
+FROM python:3.12-alpine
+
+# 安装必要证书与时区支持
+RUN apk add --no-cache ca-certificates tzdata \
+    && rm -rf /var/cache/apk/*
+
+# 创建非 root 用户 (UID 10001)
+RUN addgroup -g 10001 app \
+    && adduser -u 10001 -G app -s /bin/sh -D app
+
+# 创建持久化数据目录
+RUN mkdir -p /data && chown -R app:app /data
+
+WORKDIR /app
+
+# 拷贝代码
+COPY controller/ /app/controller/
+COPY bridge/gateway_client.py bridge/inbox.py /app/bridge/
+
+RUN chown -R app:app /app
+
+USER app:app
+
+# 默认环境变量
+ENV PYTHONUNBUFFERED=1 \
+    CONTROLLER_DB_PATH=/data/controller.db \
+    TZ=Asia/Shanghai \
+    AGENT_API_HOST=0.0.0.0 \
+    AGENT_API_PORT=8080
+
+EXPOSE 8080
+
+# 容器健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')" || exit 1
+
+ENTRYPOINT ["python3", "-m", "controller.main"]

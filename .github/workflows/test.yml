@@ -1,0 +1,61 @@
+name: test
+
+# 源码变更运行本地模拟回归，不连接真实 instabox/TG。
+# 公开包不含完整 Codex Bridge；不存在时明确显示 SKIP。
+on:
+  push:
+    branches: [main]
+    paths:
+      - keepalive.sh
+      - worker/**
+      - tools/**
+      - controller/**
+      - bridge/**
+      - tests/**
+      - docker/**
+      - .github/workflows/test.yml
+  pull_request:
+    paths:
+      - keepalive.sh
+      - worker/**
+      - tools/**
+      - controller/**
+      - bridge/**
+      - tests/**
+      - docker/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ubuntu：dash + bash，覆盖面最全
+          - label: ubuntu
+            container: ''
+          # alpine：和 NAT 机器同款 busybox（sh/awk 都是 busybox 实现）
+          - label: alpine-3.22
+            container: alpine:3.22
+
+    container: ${{ matrix.container }}
+
+    steps:
+      - name: 装依赖（alpine 容器）
+        if: matrix.container != ''
+        run: apk add --no-cache curl python3 nodejs tzdata
+
+      - uses: actions/checkout@v4
+
+      - name: 跑回归（${{ matrix.label }}）
+        run: sh tools/run_tests.sh all

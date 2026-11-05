@@ -1,0 +1,10 @@
+.git
+bridge/codex
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*
+**/secrets.json
+**/*.sqlite*
+**/*.db
+**/*.log

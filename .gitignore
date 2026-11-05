@@ -1,0 +1,23 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.log
+.DS_Store
+
+# Docker 部署的 key 文件（docker/.env，见 docker/.env.example）
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite*
+secrets.json
+activation-status.json
+uploads/
+
+.env.*
+!.env.example
+!docker/.env.controller.example
