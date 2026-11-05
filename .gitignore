@@ -21,3 +21,6 @@ uploads/
 .env.*
 !.env.example
 !docker/.env.controller.example
+
+# Local full README; public README stays concise.
+/README.full.local.md

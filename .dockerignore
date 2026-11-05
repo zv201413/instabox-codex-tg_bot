@@ -1,4 +1,5 @@
 .git
+README.full.local.md
 bridge/codex
 **/__pycache__
 **/*.pyc
