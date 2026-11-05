@@ -6,13 +6,13 @@
 
 ## 当前发布范围
 
-| 内容 | 本仓库 |
-| --- | --- |
-| VPS Controller：TG 命令、保活策略、Resume、冷却等待、SQLite 持久化 | 已包含 |
-| 通用 Bridge 接口与客户端：pull / ack / heartbeat、本地 inbox | 已包含在 `bridge/gateway_client.py`、`bridge/inbox.py` |
-| 现有 Codex Bridge 的完整源码与具体接入改造 | **暂不发布**；本地 `bridge/codex/` 保留，不包含在本次提交或发布历史中 |
-| 旧 shell / Docker / Worker 持续保活工具 | 保留；不提供 TG 消息接收 |
-| 云端运行状态 | 尚未部署验收；当前验证为本地模拟 |
+| 内容                                                               | 本仓库                                                                |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| VPS Controller：TG 命令、保活策略、Resume、冷却等待、SQLite 持久化 | 已包含                                                                |
+| 通用 Bridge 接口与客户端：pull / ack / heartbeat、本地 inbox       | 已包含在 `bridge/gateway_client.py`、`bridge/inbox.py`                |
+| 现有 Codex Bridge 的完整源码与具体接入改造                         | **暂不发布**；本地 `bridge/codex/` 保留，不包含在本次提交或发布历史中 |
+| 旧 shell / Docker / Worker 持续保活工具                            | 保留；不提供 TG 消息接收                                              |
+| 云端运行状态                                                       | 尚未部署验收；当前验证为本地模拟                                      |
 
 因此可以直接部署**独立控制 bot**：在控制 bot 唤醒机器，再回原 Codex 对话 bot 使用。若要在**同一个 bot** 中“发普通消息就唤醒并继续 Codex 对话”，还需要将机器内的 Bridge 改为网关领取模式；该具体 Bridge 本次不随仓库分发。
 
@@ -28,10 +28,10 @@
 
 ## 两种使用方式
 
-| 模式 | 设置 | 适用情况 |
-| --- | --- | --- |
-| 独立控制 bot（本次发布推荐） | `TELEGRAM_GATEWAY_MODE=control_only` | 一个新 bot 管理机器，原 Codex bot 保持现状，无需发布或改造原 Bridge |
-| 同 bot 网关 | `TELEGRAM_GATEWAY_MODE=gateway` | VPS 成为唯一收消息端；机器内 Bridge 必须另外实现 pull/ack/heartbeat，并停掉原 `getUpdates` |
+| 模式                         | 设置                                 | 适用情况                                                                                   |
+| ---------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| 独立控制 bot（本次发布推荐） | `TELEGRAM_GATEWAY_MODE=control_only` | 一个新 bot 管理机器，原 Codex bot 保持现状，无需发布或改造原 Bridge                        |
+| 同 bot 网关                  | `TELEGRAM_GATEWAY_MODE=gateway`      | VPS 成为唯一收消息端；机器内 Bridge 必须另外实现 pull/ack/heartbeat，并停掉原 `getUpdates` |
 
 **不要让 VPS 和原 Bridge 同时轮询同一个 bot。** 同 bot 部署需先按 [切换手册](docs/CONTROLLER.md#4-现有-codex-bridge-切换与回退) 完成 Bridge 对接。
 
@@ -50,15 +50,15 @@ chmod 600 docker/.env.controller
 
 用编辑器填写 `docker/.env.controller`，示例文件默认选择 `control_only`：
 
-| 配置 | 填写内容 |
-| --- | --- |
-| `INSTABOX_API_KEY` | VPS 可用的 instabox API key；核验机器读取、租约写入/释放、Resume 和操作查询权限 |
-| `INSTABOX_MACHINE_ID` | 承载 Codex Bridge 的固定 `m_...` ID，不使用 all |
-| `TELEGRAM_BOT_TOKEN` | 新建的控制 bot token，不能与仍在轮询的 Codex 对话 bot 相同 |
-| `TELEGRAM_ALLOWED_USERS` | 允许操作的 Telegram 用户数字 ID，逗号分隔；不能为空 |
-| `AGENT_API_SECRET` | 独立随机密钥，至少 32 字符；agent 接口不默认放行 |
-| `TELEGRAM_GATEWAY_MODE` | `control_only` |
-| `TZ` | 计划时区，如 `Asia/Shanghai` |
+| 配置                     | 填写内容                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| `INSTABOX_API_KEY`       | VPS 可用的 instabox API key；核验机器读取、租约写入/释放、Resume 和操作查询权限 |
+| `INSTABOX_MACHINE_ID`    | 承载 Codex Bridge 的固定 `m_...` ID，不使用 all                                 |
+| `TELEGRAM_BOT_TOKEN`     | 新建的控制 bot token，不能与仍在轮询的 Codex 对话 bot 相同                      |
+| `TELEGRAM_ALLOWED_USERS` | 允许操作的 Telegram 用户数字 ID，逗号分隔；不能为空                             |
+| `AGENT_API_SECRET`       | 独立随机密钥，至少 32 字符；agent 接口不默认放行                                |
+| `TELEGRAM_GATEWAY_MODE`  | `control_only`                                                                  |
+| `TZ`                     | 计划时区，如 `Asia/Shanghai`                                                    |
 
 凭据不要写进代码、提交或命令行。模型提供方凭据继续留在 instabox。平台出站代理的 Secrets 占位符不能直接复制到 VPS。
 
@@ -77,17 +77,17 @@ Compose 默认使用非 root、只读根目录、持久化数据卷、日志轮�
 
 常驻按钮：唤醒、保活 1 小时、结束保活、机器状态、保活设置。
 
-| 命令 | 行为 |
-| --- | --- |
-| `/resume` | 显式唤醒固定机器，重复请求合并 |
-| `/hold 60m`、`/hold 2h` | 保活指定时长；暂停时先恢复，确认运行后开始计时 |
-| `/release` | 切换 manual，清除保活与待恢复意图，停止续租并释放自己的租约 |
-| `/vmstatus` | 查看机器、agent、保活、租约、恢复阶段、冷却和 API 等待截止时间 |
-| `/mode auto` | 切回按需保活 |
-| `/mode manual` | 仅显式 hold 保活；彻底结束已有窗口使用 release |
-| `/schedule` | 查看计划 |
-| `/schedule Asia/Shanghai 09:00-18:00 0,1,2,3,4 wake=0` | 保存工作日计划；0=周一，6=周日；支持跨午夜 |
-| `/schedule on`、`/schedule off` | 明确启用计划或切换 manual |
+| 命令                                                   | 行为                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| `/resume`                                              | 显式唤醒固定机器，重复请求合并                                 |
+| `/hold 60m`、`/hold 2h`                                | 保活指定时长；暂停时先恢复，确认运行后开始计时                 |
+| `/release`                                             | 切换 manual，清除保活与待恢复意图，停止续租并释放自己的租约    |
+| `/vmstatus`                                            | 查看机器、agent、保活、租约、恢复阶段、冷却和 API 等待截止时间 |
+| `/mode auto`                                           | 切回按需保活                                                   |
+| `/mode manual`                                         | 仅显式 hold 保活；彻底结束已有窗口使用 release                 |
+| `/schedule`                                            | 查看计划                                                       |
+| `/schedule Asia/Shanghai 09:00-18:00 0,1,2,3,4 wake=0` | 保存工作日计划；0=周一，6=周日；支持跨午夜                     |
+| `/schedule on`、`/schedule off`                        | 明确启用计划或切换 manual                                      |
 
 `manual` 仅显式 hold 保活。`on_demand` 是默认策略：显式唤醒创建使用窗口，gateway 模式的合法对话和任务心跳也可延长。`scheduled` 在时段内续租，时段外释放；计划主动唤醒默认关闭，开启后仍尊重手动暂停。
 
