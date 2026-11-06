@@ -35,6 +35,8 @@ python3 tools/configure_vps.py --mode process --port 18080
 
 切换顺序：**停旧 Bridge 的 TG 轮询 → 启动 VPS Controller → 启动网关模式 Bridge**。同一个 bot 只能有一个 `getUpdates` 接收端。
 
+接入现有 `start-all.sh` 时，在环境初始化后、最终 `exec/exit` 前放入 `# INSTABOX_CONTROLLER_START`，安装器按该标记插入。监督器正常停服或因 Python 异常退出时会清理 Controller 子进程。
+
 详见[安装、启动脚本与回退](docs/SINGLE-BOT-SETUP.md)、[Bridge 对接](docs/BRIDGE-INTEGRATION.md)、[验证范围](docs/VALIDATION.md)。Docker 部署和[旧保活工具](docs/LEGACY-KEEPALIVE.md)仍可选。
 
 保活不延长平台运行上限，也不重置已运行时间。手动暂停后需 `/resume` 或 `/hold` 唤醒。真实 VPS 与 TG 的休眠、唤醒需部署后验收。

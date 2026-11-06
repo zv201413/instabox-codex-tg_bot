@@ -58,7 +58,15 @@ API key 需要固定机器读取、操作查询、活动租约、Resume 和 Susp
 
 ## 3. 接入现有 start-all.sh
 
-在 VPS 仓库目录执行（配置工具也支持同名 `--startup-script` 参数）：
+先在现有 `start-all.sh` 的顶层环境初始化之后、最后的 `exec` / `exit` 之前，放入一行明确的位置标记：
+
+```sh
+# INSTABOX_CONTROLLER_START
+```
+
+标记须处于脚本顶层执行路径，放在代理等变量的 `export` 之后；不要放在函数、条件分支或 heredoc 内。安装器按标记定位，不解析完整 shell 控制流。
+
+然后在 VPS 仓库目录执行（配置工具也支持同名 `--startup-script` 参数）：
 
 ```bash
 python3 tools/install_startup.py \
@@ -66,9 +74,11 @@ python3 tools/install_startup.py \
   --data-dir /home/container/.tg_bridge/instabox-controller
 ```
 
-工具备份旧脚本，保留原命令和权限，将启动钩子放在已有 `exec` / `exit` 之前。重复执行更新同一块。工具不会立即启动 Controller。平台重启后须实际执行 `start-all.sh`，钩子才生效。
+工具备份旧脚本，保留原命令和权限，将启动钩子放在该标记之后。已有脚本没有标记时会明确拒绝写入，不会猜测初始化边界。重新执行会更新同一块；旧版过早插入的钩子会移动到标记处，不保留重复启动命令。工具不会立即启动 Controller。平台重启后须实际执行 `start-all.sh`，钩子才生效。
 
-钩子启动脱离终端的 supervisor，子进程退出后以 2–30 秒退避重启，避免重复启动，日志约 10 MiB 轮转。容器退出时所有进程停止，重建后依靠平台启动入口重新启动。若面板要求以前台程序维持容器，可将此命令作为前台入口：
+如果使用 `configure_vps.py --startup-script`，也须先添加标记；工具会在创建凭据文件之前核对插入位置。新建的空启动脚本会自动添加标记。
+
+钩子启动脱离终端的 supervisor，子进程退出后以 2–30 秒退避重启，避免重复启动，日志约 10 MiB 轮转。监督器正常停止或因日志等异常退出时，都会先终止并等待子进程；优雅退出超时后强制结束，再删除身份记录。容器退出时所有进程停止，重建后依靠平台启动入口重新启动。若面板要求以前台程序维持容器，可将此命令作为前台入口：
 
 ```bash
 python3 tools/controller_service.py run

@@ -9,6 +9,8 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
+import itertools
+import signal
 
 from controller.config import schedule_timezone
 from tools import configure_vps, controller_service, install_startup
@@ -55,7 +57,7 @@ class SetupTests(unittest.TestCase):
     def test_startup_hook_precedes_exec_preserves_existing_commands_and_is_idempotent(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'start-all.sh'
-            original = '#!/bin/sh\necho old-service\nexec tail -f /dev/null\n'
+            original = '#!/bin/sh\necho old-service\n' + install_startup.POSITION + '\nexec tail -f /dev/null\n'
             path.write_text(original)
             path.chmod(0o750)
             backup = install_startup.install(path, Path(tmp) / 'repo with spaces', Path(tmp) / 'data')
@@ -66,6 +68,70 @@ class SetupTests(unittest.TestCase):
             self.assertIsNone(install_startup.install(path, Path(tmp) / 'repo with spaces', Path(tmp) / 'data'))
             self.assertEqual(path.stat().st_mode & 0o777, 0o750)
             subprocess.run(['sh', '-n', str(path)], check=True)
+
+    def test_startup_hook_inherits_environment_after_initialization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / 'repo'
+            (repo / 'tools').mkdir(parents=True)
+            record = root / 'observed.json'
+            (repo / 'tools' / 'controller_service.py').write_text(
+                'import os,json\nfrom pathlib import Path\nPath(' + repr(str(record)) +
+                ').write_text(json.dumps({"boot_env":os.getenv("TEST_BOOT_ENV")}))\n')
+            script = root / 'start-all.sh'
+            script.write_text('#!/bin/sh\nexport TEST_BOOT_ENV=ready\n' + install_startup.POSITION + '\nexec true\n')
+            install_startup.install(script, repo, root / 'data')
+            subprocess.run(['sh', str(script)], check=True, capture_output=True)
+            self.assertEqual(json.loads(record.read_text())['boot_env'], 'ready')
+
+    def test_existing_script_without_marker_is_never_rewritten(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'start-all.sh'
+            original = '#!/bin/sh\nexport TEST_BOOT_ENV=ready\nexec true\n'
+            script.write_text(original)
+            with self.assertRaisesRegex(ValueError, 'INSTABOX_CONTROLLER_START'):
+                install_startup.install(script, Path(tmp) / 'repo', Path(tmp) / 'data')
+            self.assertEqual(script.read_text(), original)
+            self.assertEqual(list(Path(tmp).glob('*.backup-*')), [])
+
+    def test_old_hook_is_relocated_to_explicit_marker_without_duplicates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'start-all.sh'
+            script.write_text('#!/bin/sh\n' + install_startup.BEGIN + '\nold-command\n' +
+                              install_startup.END + '\nexport TEST_BOOT_ENV=ready\n' +
+                              install_startup.POSITION + '\nexec true\n')
+            install_startup.install(script, Path(tmp) / 'repo', Path(tmp) / 'data')
+            updated = script.read_text()
+            self.assertLess(updated.index('export TEST_BOOT_ENV'), updated.index(install_startup.BEGIN))
+            self.assertLess(updated.index(install_startup.BEGIN), updated.index('exec true'))
+            self.assertNotIn('old-command', updated)
+            self.assertEqual(updated.count(install_startup.BEGIN), 1)
+            self.assertIsNone(install_startup.install(script, Path(tmp) / 'repo', Path(tmp) / 'data'))
+
+    def test_duplicate_or_reversed_markers_are_rejected(self):
+        for text in [install_startup.POSITION + '\n' + install_startup.POSITION + '\n',
+                     install_startup.END + '\n' + install_startup.BEGIN + '\n']:
+            with self.assertRaises(ValueError):
+                install_startup.place_hook(text, 'new hook\n')
+
+    def test_empty_entry_point_can_be_created(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / 'start-all.sh'
+            install_startup.install(script, Path(tmp) / 'repo', Path(tmp) / 'data')
+            self.assertTrue(script.read_text().startswith('#!/bin/sh\n'))
+            self.assertIn(install_startup.POSITION, script.read_text())
+            subprocess.run(['sh', '-n', str(script)], check=True)
+
+    def test_invalid_startup_position_is_rejected_before_configuration_creation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = root / 'start-all.sh'
+            script.write_text('#!/bin/sh\nexec true\n')
+            data = root / 'data'
+            with patch.object(sys, 'argv', ['configure', '--data-dir', str(data), '--startup-script', str(script)]):
+                with self.assertRaisesRegex(ValueError, 'INSTABOX_CONTROLLER_START'):
+                    configure_vps.main()
+            self.assertFalse(data.exists())
 
 
 class SupervisorTests(unittest.TestCase):
@@ -123,6 +189,64 @@ while True: time.sleep(0.1)
         (self.data / 'supervisor.json').write_text(json.dumps(dict(pid=os.getpid(), identity='wrong-start-time')))
         self.assertIsNone(controller_service.running(self.data))
         self.assertEqual(self.call('stop').returncode, 0)
+
+    def test_rotation_error_reaps_real_child_before_removing_record(self):
+        (self.data / 'child-count').write_text('1')  # The fake child now stays running.
+        with (self.data / 'controller.log').open('wb') as file:
+            file.truncate(11 * 1024 * 1024)
+        children = []
+        real_popen = subprocess.Popen
+        real_monotonic = time.monotonic
+        ticks = itertools.count()
+        previous_handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+        def spawn(*args, **kwargs):
+            child = real_popen(*args, **kwargs)
+            children.append(child)
+            return child
+        real_shutdown = controller_service.shutdown_child
+        def shutdown(child):
+            self.assertTrue((self.data / 'supervisor.json').is_file())
+            return real_shutdown(child)
+        try:
+            with patch.dict(os.environ, {'TEST_PROCESS_DATA':str(self.data)}), \
+                 patch.object(controller_service.subprocess, 'Popen', spawn), \
+                 patch.object(controller_service.time, 'monotonic', lambda: real_monotonic() + next(ticks) * 10), \
+                 patch.object(controller_service.shutil, 'copyfile', side_effect=OSError('simulated storage failure')), \
+                 patch.object(controller_service, 'shutdown_child', shutdown):
+                with self.assertRaises(OSError):
+                    controller_service.supervise(self.repo, self.data)
+            self.assertEqual(len(children), 1)
+            self.assertIsNotNone(children[0].poll())
+            self.assertFalse((self.data / 'supervisor.json').exists())
+            self.assertTrue((self.data / 'controller.env').exists())
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+            for sig, handler in previous_handlers.items():
+                signal.signal(sig, handler)
+
+    def test_child_ignoring_terminate_is_killed_and_reaped(self):
+        ready = self.data / 'ignore-term-ready'
+        source = ('import signal,time\nfrom pathlib import Path\n'
+                  'signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                  f'Path({str(ready)!r}).touch()\n'
+                  'while True: time.sleep(0.1)\n')
+        child = subprocess.Popen([sys.executable, '-c', source], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            deadline = time.monotonic() + 5
+            while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), 'Child must install SIGTERM handler before shutdown')
+            controller_service.shutdown_child(child, grace_seconds=0.2)
+            self.assertEqual(child.returncode, -signal.SIGKILL)
+            self.assertIsNone(controller_service.process_identity(child.pid))
+        finally:
+            if child.poll() is None:
+                child.kill()
+            child.wait(timeout=5)
 
 
 if __name__ == '__main__':

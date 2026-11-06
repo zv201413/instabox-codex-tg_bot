@@ -1,16 +1,18 @@
 {
   "version": "1.2.0",
-  "revision": "single-bot-unprivileged-process",
+  "revision": "single-bot-process-supervisor-startup-fix",
   "source_archive_sha256": "36d2210110b6903ddf909b9985596f680ebd909114c63e05ec4fac633d7e06b4",
   "local_validation": {
     "date": "2026-11-06",
-    "controller_and_process_tests": 54,
+    "controller_and_process_tests": 62,
     "bridge_tests": 47,
     "full_suite_aggregate_checks": 68,
     "full_suite_failures": 0,
     "real_local_http_gateway": "passed",
     "docker_build": "not repeated for this revision",
-    "target_vps_and_live_tg": "pending deployment"
+    "target_vps_and_live_tg": "pending deployment",
+    "process_exit_cleanup": "passed with real child, including SIGTERM ignored",
+    "startup_environment_order": "passed"
   },
   "input_archive_report": {
     "controller_tests": 48,
@@ -25,7 +27,7 @@
     ".gitignore": "2dbb6795c7bd707267e0f6970c439a01d4d10a2c99da841d9e0396c6e84367a5",
     "CONTRIBUTING.md": "dcc4e13f978b859196c9c90163a1208d1b7c44b62a7379855753ff34ad6c9e05",
     "LICENSE": "6718d97583a90b93682adca0eb7bbccb680b43d0bfd0608e0fdc9edd2cccd0c8",
-    "README.md": "5304bca01786e7e3938c98657b270391001837b15afda4d7cde6efcea92d7a43",
+    "README.md": "65af6d0cf2c7a91441e239d04f91e8016dd9f53ad2e654b7515e0c875a18dd15",
     "bridge/codex/bridge.py": "2c2b1e8715b7799d056f14955203a7e386d3a7461e0c010a54cf60ad29c0ecef",
     "bridge/codex/elicitation.py": "d02661e62db7e2aee548c55eb7d0e352b6386ed238b4cf7278aca914e7175e18",
     "bridge/codex/gateway.py": "5b259a3bcfe3594dffb85320ddf25ec7c996667179312b78f813679876f71f32",
@@ -54,22 +56,30 @@
     "docs/CLI.md": "564480538182995689b32f098ee6ed790df6f57d8696b6530a44ec5231727d5f",
     "docs/CONTROLLER.md": "e3a2d4fd82a245db23085c6ab0bf06314584437fd68e68ba93904d1e40488b82",
     "docs/LEGACY-KEEPALIVE.md": "b7e93fb992cf93474fe05792d9a9fbc7e95833d8664fbd98c764bbfbd3db43c6",
-    "docs/SINGLE-BOT-SETUP.md": "89924241879de693d97ec1e0a4eb1263ee668edac4ecedc1a4f5ec438baba511",
-    "docs/VALIDATION.md": "640302762c8b11de94a25a67109f997e424fd294a52dd9cd356848ccc9c76705",
+    "docs/SINGLE-BOT-SETUP.md": "20a8d93674245ce5ca5e02b74e4920eaf48efedeb5d8adce5a84f5efc455a473",
+    "docs/VALIDATION.md": "d72507e828ff74ab4af062b55f9f1ae7cd752fb48e37cbc076e1fe6ba1bbefae",
     "keepalive.sh": "06720987744963df86fd8df718ed2bc46e5be09abf076d7035ed019ee0de9f7a",
     "tests/test_controller.py": "dd217c67644e8548e708792f61b6c97cc414bcea0043b92d83f0fb14766ef027",
-    "tests/test_process_deploy.py": "ad09615e90c935fd481afb6660a5021995138922868f91636700899b7c92fd6e",
+    "tests/test_process_deploy.py": "8f5eef579cc3eb25c8a7fd8b990bef3b77c8e039a050424cb186f9696398d14b",
     "tests/test_regressions.py": "fbe8c2d95e8cd2ead6ea1d92cac06a641326724c2f7c81fd5e9dc4f9e2169e59",
     "tests/test_single_bot.py": "7344ce75ee3cdd94ed34cc247afc482fdc48c576673c123a076ffe62bacb0ea0",
-    "tools/configure_vps.py": "0816e8700968e3921b1f7be388b4702d352349d6fc941076c27974bd6f73f1a6",
+    "tools/configure_vps.py": "8d6d496319b44a6d885946d10437743a80682a4a3f6ea4c98a2e7ca3d635a716",
     "tools/container_smoke.py": "98c6460273f7933e287dcad2160c6f835c357be6326f0e5c49378b1218190e80",
-    "tools/controller_service.py": "7b57a991274c6b5f4124432928a10fa8cbc63ed3e741fdc1f8209358b16d4a1e",
+    "tools/controller_service.py": "2cb2915c02fe9f8f15c6c46d05991be16a970972610eb1d8c841a469d2ab412a",
     "tools/install_bridge.py": "41310e28137d669ab4130adb36e26e53538ed85cafa97158e29378c081f307c2",
-    "tools/install_startup.py": "5a9618f7134b7a539dd85c4ea9fe2a0e1b8218d83095148de9828e5522aee390",
+    "tools/install_startup.py": "2b23c9065d0e35f1080fdfcf1099353d8e2c001c9d3abf06aa919df89ea8913f",
     "tools/mock_api.py": "a3d30995c7c8a3b3732faa95fefa4a739fe962895e0b9bbd570deb1ffb0659ec",
     "tools/run_tests.sh": "c9091100b4af597fc6d7be1ce801f30d76f1f2e5e6f030180f0df2b316e7da65",
     "tools/worker_harness.mjs": "d56f5a41830fee4accb8f5da1ab9491ec134135771f73de6292eaacc34302430",
     "worker/worker.js": "122de617a4d560e68fc0c70917c99c43d370b00aefc5dd9983e56fd1b00338e3",
     "worker/wrangler.toml": "28df5376f2cdc7de9bf40fd8a06f0ba87e201e179eefbe94f93142db5a3ea62a"
+  },
+  "base_commit": "35da7f3451519fe8a8557c3a1471cb2b516e7e4e",
+  "process_fix_archive_sha256": "aa5c5bce757b844b4342306503c8574cde3305083b2a36b45cfca158100c5de4",
+  "input_process_fix_report": {
+    "controller_and_process_tests": 62,
+    "bridge_tests": 47,
+    "full_suite_aggregate_checks": 68,
+    "full_suite_failures": 0
   }
 }

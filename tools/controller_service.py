@@ -65,6 +65,19 @@ def validate(data):
     return env
 
 
+def shutdown_child(child, grace_seconds=80):
+    """Reap our child on every exit path, including supervisor failures."""
+    if child is None:
+        return
+    if child.poll() is None:
+        child.terminate()
+    try:
+        child.wait(timeout=grace_seconds)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        child.wait()
+
+
 def supervise(repo, data):
     os.umask(0o077)
     data.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -105,11 +118,6 @@ def supervise(repo, data):
                         rotated = time.monotonic()
                     time.sleep(0.2)
                 if stopped:
-                    try:
-                        child.wait(timeout=80)
-                    except subprocess.TimeoutExpired:
-                        child.kill()
-                        child.wait()
                     break
                 print(f'Controller exited ({child.returncode}); retrying in {delay}s', flush=True)
                 until = time.monotonic() + delay
@@ -117,7 +125,9 @@ def supervise(repo, data):
                     time.sleep(0.2)
                 delay = 2 if time.monotonic() - started > 60 else min(30, delay * 2)
         finally:
-            # Only this supervisor owns the record while holding the lock.
+            # Keep the identity record and exclusive lock until the child exits.
+            # Log rotation or other supervisor errors must not leave an orphan.
+            shutdown_child(child)
             (data / 'supervisor.json').unlink(missing_ok=True)
         return 0
 

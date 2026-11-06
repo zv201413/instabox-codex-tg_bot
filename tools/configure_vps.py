@@ -33,6 +33,10 @@ def main():
         parser.error('--data-dir, --startup-script and --port apply to process mode; Docker uses container port 8080')
     if args.mode == 'process' and Path('/home/container').is_dir() and not data.is_relative_to(Path('/home/container')):
         parser.error('This container persists /home/container only; keep --data-dir there')
+    if args.startup_script:
+        from tools.install_startup import place_hook
+        original = args.startup_script.read_text() if args.startup_script.exists() else '#!/bin/sh\n'
+        place_hook(original, '')  # Reject an ambiguous position before creating credentials.
     target = data / 'controller.env' if args.mode == 'process' else ROOT / 'docker' / '.env.controller'
     connection_file = data / 'bridge-connection.json' if args.mode == 'process' else ROOT / 'bridge-connection.json'
     if target.exists() or connection_file.exists():
