@@ -24,3 +24,9 @@ uploads/
 
 # Local full README; public README stays concise.
 /README.full.local.md
+
+bridge-connection.json
+*.sqlite3*
+/instabox构建/
+/runtime/
+controller.env

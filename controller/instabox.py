@@ -169,6 +169,11 @@ class InstaBoxClient:
         )
         return data
 
+    async def suspend_machine(self, machine_id: str, idempotency_key: str) -> Dict[str, Any]:
+        _, data = await asyncio.to_thread(self._request, 'POST', f'/v1/machines/{machine_id}/suspend',
+                                         payload={}, headers={'Idempotency-Key': idempotency_key})
+        return data
+
     async def get_operation(self, operation_id: str) -> Dict[str, Any]:
         status, data = await asyncio.to_thread(self._request, "GET", f"/v1/operations/{operation_id}")
         return data

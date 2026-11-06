@@ -1,7 +1,7 @@
 name: test
 
 # 源码变更运行本地模拟回归，不连接真实 instabox/TG。
-# 公开包不含完整 Codex Bridge；不存在时明确显示 SKIP。
+# 本交付包含实际 Codex Bridge，运行其功能和网关回归。
 on:
   push:
     branches: [main]

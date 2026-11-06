@@ -48,6 +48,8 @@ class TelegramBot:
         return {'inline_keyboard':[
             [{'text':'唤醒','callback_data':'gw:resume'}, {'text':'保活 1 小时','callback_data':'gw:hold_60m'}],
             [{'text':'结束保活','callback_data':'gw:release'}, {'text':'机器状态','callback_data':'gw:status'}],
+            [{'text':'保活 2 小时','callback_data':'gw:hold_2h'}, {'text':'保活 8 小时','callback_data':'gw:hold_8h'}],
+            [{'text':'休眠（保留进程）','callback_data':'gw:sleep'}],
             [{'text':'保活设置','callback_data':'gw:settings'}]]}
 
     def _is_allowed(self, user_id):
@@ -60,6 +62,7 @@ class TelegramBot:
                 f"模式：{st['keep_mode']}\n保活截止：{st['hold_until'] or '无'}\n"
                 f"待生效保活：{st['pending_hold_seconds'] or 0} 秒\n租约截止：{st['lease_expires_at'] or '无'}\n"
                 f"释放处理中：{'是' if st['release_requested'] else '否'}\n恢复阶段：{st['resume_phase']}\n"
+                f"休眠阶段：{st['sleep_phase']}\n"
                 f"冷却截止：{st['cooldown_until'] or '无'}\n重试时间：{st['resume_retry_at'] or '无'}\n"
                 f"API 等待截止：{st['api_retry_at'] or '无'}\n"
                 f"计划：{schedule['timezone']} {schedule['start']}-{schedule['end']} days={','.join(map(str,schedule['days']))} wake={int(schedule['wake'])}\n"
@@ -80,14 +83,18 @@ class TelegramBot:
             chat = msg.get('chat', {}).get('id')
             bridge = False
             reply = None
-            if not self._is_allowed(item.get('from', {}).get('id')):
+            if (not self._is_allowed(item.get('from', {}).get('id')) or item.get('from', {}).get('is_bot')
+                    or msg.get('chat', {}).get('type', 'private') != 'private'
+                    or chat != item.get('from', {}).get('id')):
                 self.db.finish_update(uid)
                 return
             cb = update.get('callback_query')
             command, args = '', []
             if cb and cb.get('data', '').startswith('gw:'):
-                command = {'resume':'/resume','hold_60m':'/hold','release':'/release','status':'/vmstatus','settings':'/settings'}.get(cb['data'][3:], '/unknown_gateway')
-                args = ['60m'] if command == '/hold' else []
+                action = cb['data'][3:]
+                command = {'resume':'/resume','hold_60m':'/hold','hold_2h':'/hold','hold_8h':'/hold',
+                           'sleep':'/sleep','release':'/release','status':'/vmstatus','settings':'/settings'}.get(action, '/unknown_gateway')
+                args = [action.removeprefix('hold_')] if command == '/hold' else []
             elif not cb and text.startswith('/'):
                 parts = text.split()
                 command, args = parts[0].split('@')[0].lower(), parts[1:]
@@ -110,6 +117,8 @@ class TelegramBot:
                         reply = '保活截止：' + deadline.isoformat()
                 elif command == '/release':
                     _, reply = self.scheduler.stage_release()
+                elif command in ('/sleep', '/suspend'):
+                    _, reply = self.scheduler.stage_sleep(chat_id=chat)
                 elif command == '/mode':
                     reply = '保活模式：' + (self.scheduler.set_mode(args[0]) if args else self.scheduler.get_mode())
                 elif command in ('/vmstatus','/status_gw'):

@@ -104,6 +104,8 @@ class Database:
                 state_columns = {'session_started_at': 'TEXT', 'pending_hold_seconds': 'INTEGER DEFAULT 0', 'pending_hold_until': 'TEXT', 'release_requested': 'INTEGER DEFAULT 0', 'resume_key': 'TEXT', 'resume_phase': "TEXT DEFAULT 'idle'", 'resume_operation': 'TEXT', 'resume_reason': 'TEXT', 'resume_explicit': 'INTEGER DEFAULT 0', 'resume_until': 'TEXT', 'resume_retry_at': 'TEXT', 'resume_attempts': 'INTEGER DEFAULT 0', 'api_blocked': 'INTEGER DEFAULT 0', 'auto_suspended_at': 'TEXT', 'suspend_reason': 'TEXT', 'schedule_json': 'TEXT', 'task_id': 'TEXT', 'task_started_at': 'TEXT', 'task_hold_until': 'TEXT', 'agent_valid_after': 'TEXT', 'schedule_active': 'INTEGER DEFAULT 0'}
                 existing = {r['name'] for r in conn.execute('PRAGMA table_info(controller_state)')}
                 state_columns['api_retry_at'] = 'TEXT'
+                state_columns.update(sleep_key='TEXT', sleep_phase="TEXT DEFAULT 'idle'",
+                                     sleep_operation='TEXT', sleep_retry_at='TEXT', sleep_until='TEXT')
                 for name, declaration in state_columns.items():
                     if name not in existing:
                         conn.execute(f'ALTER TABLE controller_state ADD COLUMN {name} {declaration}')
@@ -182,6 +184,22 @@ class Database:
             for row in rows:
                 conn.execute("UPDATE tg_updates SET status='delivered',delivered_at=? WHERE update_id=?", (now_iso(),row['update_id']))
             return [json.loads(row['raw_json']) for row in rows]
+
+    def promote_prompt_replies(self, prompt):
+        """Keep text answers to an active form flowing when the task queue is full."""
+        if not prompt:
+            return
+        if (not isinstance(prompt, dict) or type(prompt.get('message_id')) is not int
+                or type(prompt.get('created_at')) not in (int, float) or not 0 < prompt['created_at'] < 10**11):
+            raise ValueError('Invalid input prompt')
+        with self.transaction() as conn:
+            ids = []
+            for row in conn.execute("SELECT update_id,raw_json FROM tg_updates WHERE priority=0 AND status IN ('pending','delivered')"):
+                message = json.loads(row['raw_json']).get('message', {})
+                if (message.get('text') and message.get('date', 0) >= int(prompt['created_at'])
+                        and message.get('reply_to_message', {}).get('message_id') in (None, prompt['message_id'])):
+                    ids.append((row['update_id'],))
+            conn.executemany('UPDATE tg_updates SET priority=1 WHERE update_id=?', ids)
 
     def ack_updates(self, update_ids: List[int]) -> int:
         """Bridge 确认已入库/已处理的消息"""

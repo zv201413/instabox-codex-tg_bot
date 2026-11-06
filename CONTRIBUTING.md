@@ -15,9 +15,11 @@
 改 `keepalive.sh` / `worker/worker.js` 前先把回归套件跑绿，不许只靠肉眼读 diff：
 
 ```sh
-sh tools/run_tests.sh          # 全部（shell + worker）
+sh tools/run_tests.sh          # 全部（shell + worker + controller + bridge）
 sh tools/run_tests.sh shell    # 只测 keepalive.sh
 sh tools/run_tests.sh worker   # 只测 worker.js
+sh tools/run_tests.sh controller  # Controller、持久化与无 root 部署
+sh tools/run_tests.sh bridge      # 实际 Bridge、网关、审批与表单
 ```
 
 - 套件对 **本地假 API**（`tools/mock_api.py`，端口由内核挑，永远不撞车）发请求，全程假 key（`ibk_testkey0001`），**不打真 API、不用真 key**。
@@ -42,7 +44,9 @@ sh tools/run_tests.sh worker   # 只测 worker.js
 
 ## CI
 
-`.github/workflows/test.yml`：`keepalive.sh` / `worker/**` / `tools/**` 有改动即触发（push 到 main 或 PR），矩阵跑 ubuntu（dash/bash）+ **alpine:3.22（busybox）** 两套，全程假 key + 本地假 API。main 上测试挂了，CI 自动 `git revert` 肇事提交并推回 main（机器人 push 的 revert 不再触发本工作流，无循环）。
+`.github/workflows/test.yml`：代码、测试、部署配置有改动即触发（push 到 main 或 PR），矩阵跑 ubuntu（dash/bash）+ **alpine:3.22（busybox）** 两套，全程假 key + 本地假 API。工作流仅有读取仓库权限，失败时需修正代码后重新提交。
+
+Controller 与进程部署工具使用 Python 3.11+ 标准库，Bridge 保持原有功能。凭据、运行状态、构建包与本地完整 README 不进入公共仓库；源码安装工具必须保留现有配置和会话。
 
 ## 发版
 

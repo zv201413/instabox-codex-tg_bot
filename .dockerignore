@@ -9,3 +9,9 @@ bridge/codex
 **/*.sqlite*
 **/*.db
 **/*.log
+
+bridge-connection.json
+*.sqlite3*
+instabox构建
+runtime
+**/controller.env

@@ -3,6 +3,7 @@ import ipaddress
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -24,13 +25,26 @@ def secret(name):
     return Path(filename).read_text().strip() if filename else value
 
 
+def schedule_timezone(name):
+    if name == 'UTC':
+        return timezone.utc
+    match = re.fullmatch(r'UTC([+-])(\d{2}):(\d{2})', name)
+    if match:
+        hours, minutes = int(match[2]), int(match[3])
+        if hours > 23 or minutes > 59:
+            raise ValueError('Invalid UTC offset')
+        offset = timedelta(hours=hours, minutes=minutes)
+        return timezone(offset if match[1] == '+' else -offset)
+    return ZoneInfo(name)
+
+
 def validate_schedule(start, end, timezone, days):
     for value in (start, end):
         if not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', value):
             raise ValueError('Schedule must use HH:MM-HH:MM')
     if start == end:
         raise ValueError('Schedule start and end must differ')
-    ZoneInfo(timezone)
+    schedule_timezone(timezone)
     if not days or any(day not in range(7) for day in days):
         raise ValueError('Schedule days must be 0..6 (Monday..Sunday)')
 
@@ -82,6 +96,8 @@ class ControllerConfig:
             raise ValueError('Scheduler interval must fit within renewal margin')
         if not 0 < self.hold_window_seconds <= self.max_hold_seconds:
             raise ValueError('Require 0 < HOLD_WINDOW_MINUTES <= MAX_HOLD_MINUTES')
+        if self.max_hold_seconds > 8 * 3600:
+            raise ValueError('MAX_HOLD_MINUTES must not exceed 480 (8 hours)')
         if self.keep_mode not in ('manual', 'on_demand', 'scheduled'):
             raise ValueError('Invalid keep mode')
         if self.gateway_mode not in ('gateway', 'control_only'):

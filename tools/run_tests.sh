@@ -233,7 +233,7 @@ test_controller() {
 	c_out=$(cd "$REPO" && python3 -m unittest discover -s tests -v 2>&1)
 	if [ "$?" = "0" ]; then
 		ok "Controller 单元测试全量通过"
-		printf '%s\n' "$c_out" | tail -n 4
+		printf '%s\n' "$c_out" | awk '/^Ran [0-9]+ tests|^OK$/ {print}'
 	else
 		bad "Controller 单元测试失败" "$c_out"
 	fi
@@ -243,7 +243,7 @@ test_controller() {
 test_bridge() {
 	sec "Codex Bridge 网关及原功能回归"
 	if [ ! -d "$REPO/bridge/codex" ]; then
-		printf '  SKIP: 完整 Codex Bridge 暂不随发布包分发\n'
+		bad "缺少本项目的 Codex Bridge 源码" ""
 		return 0
 	fi
 	b_out=$(cd "$REPO/bridge/codex" && python3 -m unittest discover -p 'test_*.py' -v 2>&1)

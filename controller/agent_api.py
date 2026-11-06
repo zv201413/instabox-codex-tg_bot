@@ -102,6 +102,7 @@ class AgentApiServer:
                 limit, controls = int(body.get('limit',10)), int(body.get('control_limit',20))
                 if not 0 <= limit <= 100 or not 0 <= controls <= 100:
                     raise ValueError('Invalid pull limit')
+                self.db.promote_prompt_replies(body.get('input_prompt'))
                 updates = self.db.pull_pending_updates(min(limit,agent['inbox_capacity']),controls)
                 return 200, {'ok':True,'updates':updates,'ready':True}
             if method == 'POST' and path == '/agent/ack':

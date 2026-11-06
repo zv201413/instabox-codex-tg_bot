@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # InstaBox VPS Controller 容器镜像
-# 纯 Python 3 标准库实现，零第三方依赖，极致轻量安全（~45MB）
+# Python 标准库实现，无第三方 Python 依赖
 FROM python:3.12-alpine
 
 # 安装必要证书与时区支持

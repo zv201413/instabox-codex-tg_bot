@@ -7,12 +7,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from controller.config import validate_schedule
+from controller.config import validate_schedule, schedule_timezone
 from controller.db import now_iso
 from controller.instabox import InstaBoxError
 
 logger = logging.getLogger('scheduler')
 ACTIVE_PHASES = ('requested', 'cooldown', 'retry', 'resuming', 'awaiting_agent')
+SLEEP_PHASES = ('requested', 'pausing', 'retry')
 
 
 def parse_iso(value):
@@ -94,8 +95,11 @@ class LeaseScheduler:
         duration = duration_seconds if duration_seconds is not None else self.cfg.hold_window_seconds
         if type(duration) is not int or duration <= 0:
             raise ValueError('保活时长必须为正整数')
-        duration = min(duration, self.cfg.max_hold_seconds)
+        if duration > self.cfg.max_hold_seconds:
+            raise ValueError(f'保活最多 {self.cfg.max_hold_seconds // 60} 分钟，不能超过 8 小时')
         st = self.db.get_state()
+        if st['sleep_phase'] in SLEEP_PHASES:
+            raise ValueError('休眠正在处理，完成后再使用 /resume 或 /hold')
         if not explicit and st['keep_mode'] != 'on_demand':
             return None
         now = datetime.now(timezone.utc)
@@ -112,6 +116,8 @@ class LeaseScheduler:
 
     def stage_resume(self, reason='user', explicit=True, chat_id=None):
         now, st = datetime.now(timezone.utc), self.db.get_state()
+        if st['sleep_phase'] in SLEEP_PHASES:
+            return False, '休眠正在处理，完成后再使用 /resume 或 /hold。'
         if st['api_blocked'] and not explicit:
             return False, '机器 API 权限异常，需修正凭据并显式重试。'
         if explicit and st['api_blocked']:
@@ -140,13 +146,68 @@ class LeaseScheduler:
 
     def stage_release(self):
         self.db.update_state(keep_mode='manual', hold_until=None, pending_hold_seconds=0, pending_hold_until=None,
-                             task_hold_until=None, session_started_at=None, resume_phase='idle', resume_key=None,
+                             task_hold_until=None, resume_phase='idle', resume_key=None,
                              resume_operation=None, resume_until=None, resume_retry_at=None, release_requested=1)
         return True, '已停止本服务续租并请求释放自身租约；不会直接暂停机器。'
 
     async def release_lease(self):
         async with self.transaction():
             return self.stage_release()
+
+    def stage_sleep(self, chat_id=None):
+        st = self.db.get_state()
+        if st['sleep_phase'] in SLEEP_PHASES:
+            return True, '休眠请求已保存，重复请求已合并。'
+        if st['resume_phase'] in ACTIVE_PHASES:
+            return False, '机器正在恢复，请待恢复完成后再使用 /sleep。'
+        self.stage_release()
+        key = str(uuid.uuid4())
+        self.db.update_state(sleep_key=key, sleep_phase='requested', sleep_operation=None,
+                             sleep_retry_at=None, sleep_until=iso(datetime.now(timezone.utc) + timedelta(minutes=10)),
+                             api_blocked=0, last_error=None)
+        if chat_id is not None:
+            self.db.set_meta('sleep_notify:' + key, str(chat_id))
+        return True, '已请求休眠；保活已结束，运行中的进程和任务将随内存暂停。之后使用 /resume 或 /hold 唤醒。'
+
+    async def _sleep_tick(self):
+        st, now = self.db.get_state(), datetime.now(timezone.utc)
+        if st['sleep_phase'] not in SLEEP_PHASES:
+            return False
+        if st['vm_state'] in ('paused', 'suspended', 'stopped'):
+            self.db.update_state(sleep_phase='done', agent_valid_after=iso(now))
+            chat = self.db.get_meta('sleep_notify:' + st['sleep_key'])
+            if chat:
+                self.db.add_reply('sleep:' + st['sleep_key'], int(chat),
+                                  '机器已休眠。使用 /resume 唤醒，或 /hold 2h 唤醒并保活。')
+            return True
+        if parse_iso(st['sleep_until']) and now >= parse_iso(st['sleep_until']):
+            self.db.update_state(sleep_phase='failed', last_error='休眠请求超时，请查看平台状态。')
+            return True
+        if parse_iso(st['sleep_retry_at']) and now < parse_iso(st['sleep_retry_at']):
+            return True
+        try:
+            if st['sleep_operation']:
+                result = await self.client.get_operation(st['sleep_operation'])
+                if (result.get('state') or result.get('status')) in ('failed', 'error', 'cancelled'):
+                    self.db.update_state(sleep_phase='failed', last_error='平台休眠操作失败。')
+                return True
+            if st['vm_state'] != 'running':
+                return True
+            result = await self.client.suspend_machine(self.resolved_machine_id, st['sleep_key'])
+            operation = result.get('operation', result)
+            op_id = operation.get('id') or result.get('operationId')
+            self.db.update_state(sleep_phase='pausing', sleep_operation=op_id,
+                                 sleep_retry_at=None if op_id else iso(now + timedelta(seconds=30)))
+        except InstaBoxError as error:
+            if error.code == 'operation_conflict' and error.body.get('operationId'):
+                self.db.update_state(sleep_phase='pausing', sleep_operation=error.body['operationId'])
+            elif error.status_code in (400, 401, 403, 404):
+                self.db.update_state(sleep_phase='failed', api_blocked=int(error.status_code in (401, 403)),
+                                     last_error=f'休眠失败：HTTP {error.status_code}')
+            else:
+                self.db.update_state(sleep_phase='retry', sleep_retry_at=iso(now + timedelta(seconds=max(10, error.retry_after or 30))),
+                                     last_error='休眠请求暂时失败，将重试同一个请求。')
+        return True
 
     def _automatic_pause(self, st):
         reason = (st.get('suspend_reason') or '').lower()
@@ -176,7 +237,7 @@ class LeaseScheduler:
 
     def _is_in_schedule(self, now):
         schedule = self.schedule()
-        local = now.astimezone(ZoneInfo(schedule['timezone']))
+        local = now.astimezone(schedule_timezone(schedule['timezone']))
         value = local.strftime('%H:%M')
         start, end = schedule['start'], schedule['end']
         if start < end:
@@ -218,11 +279,13 @@ class LeaseScheduler:
             return
         if st['vm_state'] == 'running':
             self.db.update_state(resume_phase='awaiting_agent')
-            if self.agent_ready():
+            if self.cfg.gateway_mode == 'control_only' or self.agent_ready():
                 self.db.update_state(resume_phase='ready', last_error=None)
                 chat = self.db.get_meta('resume_notify:' + st['resume_key'])
                 if chat:
-                    self.db.add_reply('ready:' + st['resume_key'], int(chat), '机器已恢复，Bridge/Codex 已就绪，可继续对话。')
+                    self.db.add_reply('ready:' + st['resume_key'], int(chat),
+                        '机器已恢复，可回对话 bot 继续。' if self.cfg.gateway_mode == 'control_only'
+                        else '机器已恢复，Bridge/Codex 已就绪，可继续对话。')
             return
         if not st['resume_explicit'] and not self._automatic_pause(st):
             self.db.update_state(resume_phase='needs_explicit', last_error='手动暂停或来源不明，需要 /resume')
@@ -278,6 +341,12 @@ class LeaseScheduler:
         mode = st['keep_mode']
         if mode == 'scheduled':
             active = self._is_in_schedule(now)
+            start = parse_iso(st['session_started_at'])
+            if active and not start and st['vm_state'] == 'running':
+                start = now
+                self.db.update_state(session_started_at=iso(start))
+            if start and now >= start + timedelta(seconds=self.cfg.max_hold_seconds):
+                active = False
             if active and not st['schedule_active'] and self.schedule()['wake']:
                 self.stage_resume('schedule', explicit=False)
             self.db.update_state(schedule_active=int(active))
@@ -324,6 +393,8 @@ class LeaseScheduler:
                 self._error(error, resume=st['resume_phase'] in ACTIVE_PHASES)
                 return
             need_hold = self._activate_and_decide()
+            if await self._sleep_tick():
+                return
             await self._resume_tick()
             st, now = self.db.get_state(), datetime.now(timezone.utc)
             if st['api_blocked']:
